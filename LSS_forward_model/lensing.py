@@ -122,7 +122,7 @@ def apply_random_rotation(e1_in: np.ndarray, e2_in: np.ndarray) -> Tuple[np.ndar
     return e1_out, e2_out
 
 
-def make_WL_sample(ngal_glass, zeff_glass, cosmo_bundle, sims_parameters, nside_maps, fields, cats_Euclid, SC_corrections =None,do_catalog = False, include_SC = True):
+def make_WL_sample(ngal_glass, zeff_glass, cosmo_bundle, sims_parameters, nside_maps, fields, cats_Euclid, SC_corrections =None,do_catalog = False, include_SC = True, compact_savings = False):
     if include_SC:
         corr_variance_array =  [  SC_corrections['corr_variance_fit'][tomo](sims_parameters['bias_sc'][tomo])        for tomo in range(len(ngal_glass))]
         coeff_kurtosis_array = [  SC_corrections['coeff_kurtosis_fit'][tomo](sims_parameters['bias_sc'][tomo])       for tomo in range(len(ngal_glass))]
@@ -252,17 +252,31 @@ def make_WL_sample(ngal_glass, zeff_glass, cosmo_bundle, sims_parameters, nside_
     
         g1_map[mask_sims]  = g1_map[mask_sims]/(n_map_sc[mask_sims])
         g2_map[mask_sims] =  g2_map[mask_sims]/(n_map_sc[mask_sims])
-    
-        e1_ = ((g1_map+e1r_map0))#[mask_sims]
-        e2_ = ((g2_map+e2r_map0))#[mask_sims]
-        e1n_ = ( e1r_map)#[mask_sims]
-        e2n_ = ( e2r_map)#[mask_sims]
-       # idx_ = np.arange(len(mask_sims))[mask_sims]
-    
-        maps_sim[tomo] =     {'g1_map':g1_map,'g2_map':g2_map,'e1':e1_,'e2':e2_,'e1n':e1n_,'e2n':e2n_,
-                                'e1r_map0_ref':e1r_map0_ref,
-                                'e2r_map0_ref':e2r_map0_ref,
-                                'var_':var_}
+
+        if compact_savings:
+            e1_ = ((g1_map* sims_parameters['dm'][tomo] +e1r_map0))[mask_sims]
+            e2_ = ((g2_map* sims_parameters['dm'][tomo] +e2r_map0))[mask_sims]
+            g1_ = g1_map[mask_sims]
+            g2_ = g2_map[mask_sims]
+            e1n_ = ( e1r_map)[mask_sims]
+            e2n_ = ( e2r_map)[mask_sims]
+            idx_ = np.arange(len(mask_sims))[mask_sims]
+        
+            maps_sim[tomo] =     {'g1_map':g1_,'g2_map':g2_,'e1':e1_,'e2':e2_,'e1n':e1n_,'e2n':e2n_,
+                                    'idx_':idx_}
+
+            
+        else:
+            e1_ = ((g1_map* sims_parameters['dm'][tomo] +e1r_map0))#[mask_sims]
+            e2_ = ((g2_map* sims_parameters['dm'][tomo] +e2r_map0))#[mask_sims]
+            e1n_ = ( e1r_map)#[mask_sims]
+            e2n_ = ( e2r_map)#[mask_sims]
+           # idx_ = np.arange(len(mask_sims))[mask_sims]
+        
+            maps_sim[tomo] =     {'g1_map':g1_map,'g2_map':g2_map,'e1':e1_,'e2':e2_,'e1n':e1n_,'e2n':e2n_,
+                                    'e1r_map0_ref':e1r_map0_ref,
+                                    'e2r_map0_ref':e2r_map0_ref,
+                                    'var_':var_}     
     
         if do_catalog:
     
@@ -271,8 +285,8 @@ def make_WL_sample(ngal_glass, zeff_glass, cosmo_bundle, sims_parameters, nside_
             SC_per_pixel_correction_noise  = f**2/((np.sqrt(A_corr_array[tomo]*corr_variance_array[tomo])) * np.sqrt((1+coeff_kurtosis_array[tomo]*var_)))[pix]
             
             # the f**2 applied to g1,g2 is the normalisation missing in the g1_tot,g2_tot ---------------------------------------------------
-            e1_SC = g1_*f**2+es1a*SC_per_pixel_correction_noise
-            e2_SC = g2_*f**2+es2a*SC_per_pixel_correction_noise
+            e1_SC = sims_parameters['dm'][tomo]*g1_*f**2+es1a*SC_per_pixel_correction_noise
+            e2_SC = sims_parameters['dm'][tomo]*g2_*f**2+es2a*SC_per_pixel_correction_noise
             #e1_SC,e2_SC = addSourceEllipticity({'shear1':g1_,'shear2':g2_},{'e1':es1a*SC_per_pixel_correction_noise,'e2':es2a*SC_per_pixel_correction_noise},es_colnames=("e1","e2"))
             cats_sim[tomo] =  {'ra':cats_Euclid[tomo]['ra'],'dec':cats_Euclid[tomo]['dec'],'e1':e1_SC,'e2':e2_SC,'w':cats_Euclid[tomo]['w']}
         

@@ -530,13 +530,13 @@ class LimberTheory:
         if self.nonlinear_req == "halofit":
             PKw = camb.get_matter_power_interpolator(
             self._pars_halofit, nonlinear=nonlinear, hubble_units=True, k_hunit=True,
-            kmax=float(kmax), zmax=1100.0, zmin=0.0,
+            kmax=float(kmax), zmax=zmax, zmin=0.0,
             var1=model.Transfer_Weyl, var2=model.Transfer_Weyl
             )
         else:
             PKw = camb.get_matter_power_interpolator(
             self._pars_mead, nonlinear=nonlinear, hubble_units=True, k_hunit=True,
-            kmax=float(kmax), zmax=1100.0, zmin=0.0,
+            kmax=float(kmax), zmax=zmax ,zmin=0.0,
             var1=model.Transfer_Weyl, var2=model.Transfer_Weyl
             )
         

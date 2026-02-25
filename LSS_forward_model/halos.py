@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import healpy as hp
 import pyccl as ccl
+import copy
 from scipy.interpolate import CubicSpline
 from typing import Optional, Dict
 import frogress
@@ -12,6 +13,8 @@ from scipy.optimize import root_scalar
 from scipy.interpolate import RegularGridInterpolator
 import BaryonForge as bfn
 import astropy.io.fits as fits
+from astropy.cosmology import wCDM, Flatw0waCDM
+import astropy.units as u
 
 def save_halocatalog(shells_info, sims_parameters, max_redshift = 1.5, halo_snapshots_path = '' , catalog_path = 'halo_catalog.parquet',log10_mass_limit = None):
 
@@ -53,7 +56,7 @@ def save_halocatalog(shells_info, sims_parameters, max_redshift = 1.5, halo_snap
     """  
 
 
-    def load_snapshot(path_base, c_, Lbox_Mpc, log10_mass_limit = None):
+    def load_snapshot(path_base, c_, Lbox_Mpc, sims_parameters,log10_mass_limit = None):
         """
         Loads halo data from a specified path based on the mode.
     
@@ -64,23 +67,53 @@ def save_halocatalog(shells_info, sims_parameters, max_redshift = 1.5, halo_snap
         Lbox_Mpc: Lbox in Mpc
         :return: Dictionary containing halo data
         """
-        c__ = f'{int(c_):03}'
 
-        p = f'{path_base}run.00{c__}.fofstats.parquet'
+        Om0 = float(sims_parameters["Omega_m"])
+        w0  = float(sims_parameters["w0"])
+        try:
+            wa  = float(sims_parameters["wa"])
+        except:
+            wa = 0.
+        H0  = float(sims_parameters["h"]) * 100.0
+        Lbox_Mpc = float(sims_parameters["dBoxSize Mpc/h"]) / float(sims_parameters["h"])
+        cosmo = Flatw0waCDM(H0=H0, Om0=Om0, w0=w0, wa=wa) if abs(wa) > 0 else wCDM(H0=H0, Om0=Om0, w0=w0, Ode0=1-Om0)
+        Lbox = Lbox_Mpc * u.Mpc
+        f_mass = (Lbox**3 * cosmo.critical_density(0).to(u.Msun/u.Mpc**3)).value  # Msun
         
+
+
+        c__ = f'{int(c_):03}'
+    
+        p = f'{path_base}run.00{c__}.fofstats.parquet'
+        p0 = f'{path_base}/fof/run.{int(c_):05d}.fofstats.0'
         pkd_halo_dtype = np.dtype([("rPot", ("f4", 3)), ("minPot", "f4"), ("rcen", ("f4", 3)),
                                    ("rcom", ("f4", 3)), ("cvom", ("f4", 3)), ("angular", ("f4", 3)),
                                    ("inertia", ("f4", 6)), ("sigma", "f4"), ("rMax", "f4"),
                                    ("fMAss", "f4"), ("fEnvironDensity0", "f4"),
                                    ("fEnvironDensity1", "f4"), ("rHalf", "f4")])
-
+    
         parquet_ = True
         columns_to_read = ['halo_center', 'rmax', 'log10M']
         try:
             halos = pd.read_parquet(p, columns=columns_to_read)
         except:
-            print ('failed ',p)
-            sd_
+            try:
+    
+                halos_ = np.fromfile(p0, count=-1, dtype=pkd_halo_dtype)
+                halo_center = Lbox_Mpc * (halos_["rPot"]  + halos_["rcen"] + 0.5)
+                rmax = Lbox_Mpc * halos_["rMax"]
+                log10M = np.log10((halos_['fMAss'] * f_mass))
+    
+                halos = dict()
+                halos["halo_center"] = halo_center.tolist()
+                halos["rmax"] =  (rmax* 1000).astype('uint16')
+                halos["log10M"] = (log10M* 1000).astype('uint16')
+    
+                del halos_
+                
+            except:
+                print ('failed ',p)
+                sd_
         if log10_mass_limit is not None:
             if min(halos['log10M'])/1000<10:    
                 # fiducial covariance, likely off by a factor 1000
@@ -93,8 +126,8 @@ def save_halocatalog(shells_info, sims_parameters, max_redshift = 1.5, halo_snap
         centers = np.array([x for x in np.array(halos['halo_center'])])
         M = np.array([x for x in np.array(halos['log10M'])])
         rmax = np.array([x for x in np.array(halos['rmax'])])
-
-
+    
+    
         output = {
             'x': centers[:, 0],
             'y': centers[:, 1],
@@ -102,10 +135,9 @@ def save_halocatalog(shells_info, sims_parameters, max_redshift = 1.5, halo_snap
             'rhalf': rmax,
             'M': M 
         }
-
-                
-        return output
     
+                
+        return output    
 
     def may_intersect_sphere(x_i, y_i, z_i, Lbox_Mpc, d_min, d_max):
         """
@@ -178,6 +210,10 @@ def save_halocatalog(shells_info, sims_parameters, max_redshift = 1.5, halo_snap
     max_step_halocatalog = len(shells_info['z_far'])-int(shells_info['Step'][[shells_info['z_far']<max_redshift][0]][0])+1
 
     Lbox_Mpc = sims_parameters['dBoxSize Mpc/h']/ sims_parameters['h']
+
+
+
+    
     
     # Initialize the final catalog dictionary
     final_cat = {
@@ -206,7 +242,7 @@ def save_halocatalog(shells_info, sims_parameters, max_redshift = 1.5, halo_snap
         step = shells_info['Step'][i]
 
         # Load the snapshot data for the current step
-        output_ = load_snapshot(halo_snapshots_path, step, Lbox_Mpc, log10_mass_limit = log10_mass_limit)
+        output_ = load_snapshot(halo_snapshots_path, step, Lbox_Mpc, sims_parameters,log10_mass_limit = log10_mass_limit)
 
 
         replicas_max = np.ceil(d_max / Lbox_Mpc).astype(int)
@@ -451,6 +487,7 @@ def load_halo_catalog(
     colossus_pars: [Dict[str, float]],
     sims_parameters: Dict[str, float],
     halo_catalog_log10mass_cut: float,
+    no_calib: True,
 ):
     """
     Load a halo catalog, convert FoF masses to M200c (via Colossus-based calibrator),
@@ -487,12 +524,17 @@ def load_halo_catalog(
     ra, dec = recover_halo_radec(df)
 
     # Convert FoF -> SO (M200c); important for tSZ, neutral for large-scale baryonification
-    interpolator_calib = build_fof_to_m200c_interpolator(
-        sims_parameters, colossus_cosmology)
-    coords = np.column_stack([np.log10(M_fof), z])
-    M200c  = interpolator_calib(coords)
+    if no_calib:
+        print ('no calib')
+        M200c = copy.deepcopy(M_fof)
+    else:
+        print ('extra calib [fof -> SO]')
+        interpolator_calib = build_fof_to_m200c_interpolator(
+            sims_parameters, colossus_cosmology)
+        coords = np.column_stack([np.log10(M_fof), z])
+        M200c  = interpolator_calib(coords)
 
-    # Apply mass cut
+    # Apply mass cut -----------------------------------
     mask = (np.log10(M200c) > halo_catalog_log10mass_cut)
 
     halos = {
