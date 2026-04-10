@@ -122,7 +122,7 @@ def apply_random_rotation(e1_in: np.ndarray, e2_in: np.ndarray) -> Tuple[np.ndar
     return e1_out, e2_out
 
 
-def make_WL_sample(ngal_glass, zeff_glass, cosmo_bundle, sims_parameters, nside_maps, fields, cats_Euclid, SC_corrections =None,do_catalog = False, include_SC = True, compact_savings = False):
+def make_WL_sample(ngal_glass, zeff_glass, cosmo_bundle, sims_parameters, nside_maps, fields, cats_Euclid, SC_corrections=None, do_catalog=False, include_SC=True, compact_savings=False, store_full_sky_noise_free=False):
     if include_SC:
         corr_variance_array =  [  SC_corrections['corr_variance_fit'][tomo](sims_parameters['bias_sc'][tomo])        for tomo in range(len(ngal_glass))]
         coeff_kurtosis_array = [  SC_corrections['coeff_kurtosis_fit'][tomo](sims_parameters['bias_sc'][tomo])       for tomo in range(len(ngal_glass))]
@@ -265,6 +265,7 @@ def make_WL_sample(ngal_glass, zeff_glass, cosmo_bundle, sims_parameters, nside_
             maps_sim[tomo] =     {'g1_map':g1_,'g2_map':g2_,'e1':e1_,'e2':e2_,'e1n':e1n_,'e2n':e2n_,
                                     'idx_':idx_}
 
+
             
         else:
             e1_ = ((g1_map* sims_parameters['dm'][tomo] +e1r_map0))#[mask_sims]
@@ -277,6 +278,14 @@ def make_WL_sample(ngal_glass, zeff_glass, cosmo_bundle, sims_parameters, nside_
                                     'e1r_map0_ref':e1r_map0_ref,
                                     'e2r_map0_ref':e2r_map0_ref,
                                     'var_':var_}     
+
+
+        if store_full_sky_noise_free:
+
+            maps_sim[tomo]['g1_tot'] = g1_tot[tomo]
+            maps_sim[tomo]['g2_tot'] = g2_tot[tomo]
+            maps_sim[tomo]['d_tot'] = d_tot[tomo]
+
     
         if do_catalog:
     
